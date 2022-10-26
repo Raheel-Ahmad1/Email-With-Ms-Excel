@@ -1,0 +1,151 @@
+
+import excel2img
+import matplotlib.pyplot as plt
+import pandas as pd
+from pandas.plotting import table
+from email.mime.base import MIMEBase
+from email import encoders
+import pythoncom
+from PIL import ImageGrab
+from PIL import Image
+import glob
+import win32com.client as win32
+import os
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.image import MIMEImage
+import smtplib
+
+
+pythoncom.CoInitialize()
+
+def extract_used_cells(excel_file):
+    dfs= pd.read_excel("SampleData.xlsx",sheet_name='Pivot')
+    dfs = dfs.dropna(axis=0, how="all")
+    dfs = dfs.dropna(axis=1, how="all")
+    dfs.columns = dfs.iloc[0]
+    #display(dfs)
+    ax = plt.subplot(111, frame_on=False) # no visible frame
+    ax.xaxis.set_visible(False)  # hide the x axis
+    ax.yaxis.set_visible(False)  # hide the y axis
+
+    table(ax, dfs,loc='center')  # where df is your data frame
+
+    plt.savefig('mytable.png')
+
+
+def extract_charts(excel_file):
+    file_withAbsPath = os.path.abspath(excel_file)
+    
+    excel = win32.gencache.EnsureDispatch('Excel.Application')
+    workbook = excel.Workbooks.Open(file_withAbsPath)
+
+    for sheet in workbook.Worksheets:
+        for i, shape in enumerate(sheet.Shapes):
+            #print(shape.Name)
+            shape.Copy()
+            image = ImageGrab.grabclipboard()
+            #image.show()
+            image.save('{}.png'.format(i+1), 'PNG')
+        
+        
+    workbook.Close(True)
+    excel.Quit()
+    excel = None
+
+    
+def get_imgs_names_inCwd():
+    cwd = os.getcwd()
+    imgfile_names = []
+    for filename in glob.glob('{}\*.png'.format(cwd)): #assuming gif
+        im=Image.open(filename)
+        splitted = filename.split('\\')
+        splitted = splitted[-1].split('.')
+        imgfile_names.append(splitted[0]) 
+        #print(imgfile_names)
+        
+    return imgfile_names
+
+def delete_jpg_files():
+    mydir = os.getcwd()
+    filelist = [ f for f in os.listdir(mydir) if f.endswith(".png") ]
+    for f in filelist:
+        os.remove(os.path.join(mydir, f))
+
+
+def send_mail(excel_file_name,sender_emailadd, sender_pass, reciever_emailadd, subject, message):
+    
+    excel_file_name = excel_file_name + '.xlsx'
+    
+    extract_used_cells(excel_file_name)
+    extract_charts(excel_file_name)
+    
+    
+    # create message object instance
+    msg = MIMEMultipart()
+    
+    # setup the parameters of the message
+    password = sender_pass
+    msg['From'] = sender_emailadd
+    msg['To'] = reciever_emailadd
+    msg['Subject'] = subject
+    
+    
+    # add in the message body
+    my_message = message
+    msg.attach(MIMEText(my_message, 'plain'))
+    
+    
+    list_of_imgsname = get_imgs_names_inCwd()
+    
+    for image_name in list_of_imgsname:
+        # write the HTML part
+        #print("image_name : ",image_name )
+        html = """\
+                <html>
+                 <body>
+                   <img src="cid:%s">
+                 </body>
+                </html>
+                """%(image_name)
+        
+        # add in the html message in body
+        msg.attach(MIMEText(html, "html"))
+        
+        # We assume that the image file is in the same directory that you run your Python script from
+        fp = open('{}.png'.format(image_name), 'rb')
+        image= MIMEImage(fp.read())
+        fp.close()
+    
+        # Specify the  ID according to the img src in the HTML part
+        image.add_header('Content-ID', '<%s>' %(image_name))
+        
+        msg.attach(image)
+    
+    part =  MIMEBase('application', "octet-stream")
+    part.set_payload(open("{}".format(excel_file_name), "rb").read())
+    encoders.encode_base64(part)
+    part.add_header('Content-Disposition', 'attachment; filename="{}"'.format(excel_file_name) )
+    msg.attach(part)
+    
+    server = smtplib.SMTP('smtp.gmail.com: 587')
+    server.starttls()
+    # Login Credentials for sending the mail
+    server.login(msg['From'], password)
+    # send the message via the server.
+    server.sendmail(msg['From'], msg['To'], msg.as_string())
+    server.quit()
+    #delete_jpg_files()
+    print ("successfully sent email to %s:" % (msg['To']) )
+    
+    
+    
+    
+sender_emailadd = ""# insert your mail(sending mail) in inverted commas
+sender_pass = ""# insert your pass in inverted commas
+reciever_emailadd = ""# insert recieving mail in inverted commas
+subject = "testing_2"# insert subject in inverted commas
+message = "Hello world"# insert message in inverted commas
+excel_file_name = 'SampleData' #enter file name without extension in inverted commas
+
+send_mail(excel_file_name,sender_emailadd, sender_pass, reciever_emailadd, subject, message)
