@@ -29,7 +29,7 @@ def extract_used_cells(excel_file):
     ax.xaxis.set_visible(False)  # hide the x axis
     ax.yaxis.set_visible(False)  # hide the y axis
 
-    table(ax, dfs,loc='center')  # where df is your data frame
+    table(ax, dfs,loc='center')  # where df is data frame 
 
     plt.savefig('mytable.png')
 
